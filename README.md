@@ -13,22 +13,34 @@ A tiny cross-platform (Linux/Windows) GUI launcher for
 Your last branch + run mode are remembered. If the saved branch no longer exists, it falls
 back to `master`, then `main`, then the first available branch.
 
-## Quick start (Windows)
+## Quick start
 
-1. Install the prerequisites with [winget](https://learn.microsoft.com/windows/package-manager/):
+Grab the binary for your OS from the
+[releases page](https://github.com/Ritze03/ForzaTelemetryV3Launcher/releases) after installing
+the prerequisites below.
+
+### Windows
+
+1. Install the prerequisites with [winget](https://learn.microsoft.com/windows/package-manager/),
+   then restart the terminal so `cargo` and `git` are on `PATH`:
 
    ```powershell
    winget install Rustlang.Rustup
    winget install Git.Git
    ```
 
-   Restart the terminal afterwards so `cargo` and `git` are on `PATH`.
+2. Download and run `ForzaTelemetryV3Launcher-windows.exe`.
 
-2. Download `ForzaTelemetryV3Launcher-windows.exe` from the
-   [releases page](https://github.com/Ritze03/ForzaTelemetryV3Launcher/releases) and run it.
+### Linux
 
-On Linux, install `rust`/`cargo` and `git` via your package manager, then grab
-`ForzaTelemetryV3Launcher-linux` from the same [releases page](https://github.com/Ritze03/ForzaTelemetryV3Launcher/releases).
+1. Install `rust`/`cargo` and `git` via your package manager, e.g.:
+
+   ```sh
+   sudo pacman -S rust git        # Arch
+   sudo apt install cargo git     # Debian/Ubuntu
+   ```
+
+2. Download `ForzaTelemetryV3Launcher-linux`, then `chmod +x` it and run it.
 
 ## Paths
 
