@@ -307,7 +307,24 @@ impl eframe::App for App {
     }
 }
 
+/// --last-config: update, build, and launch the last-configured branch + run type, no GUI.
+fn run_last_config() -> Result<(), String> {
+    let (saved, release) = load_config();
+    let branches = update_repo()?;
+    let branch = pick_default_branch(saved.as_deref(), &branches);
+    let exe = build(&branch, release)?;
+    spawn_run(&exe)
+}
+
 fn main() -> eframe::Result<()> {
+    if std::env::args().any(|a| a == "--last-config") {
+        if let Err(e) = run_last_config() {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([290.0, 190.0])
