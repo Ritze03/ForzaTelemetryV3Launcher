@@ -2,7 +2,7 @@
 
 use eframe::egui;
 use std::fs::{self, File, OpenOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -38,8 +38,9 @@ fn run_git(args: &[&str]) -> Result<String, String> {
 fn parse_branches(stdout: &str) -> Vec<String> {
     stdout
         .lines()
-        .map(|l| l.trim_start_matches('*').trim().to_string())
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.contains("->")) // skip the "origin/HEAD -> origin/master" pointer
+        .map(|l| l.trim_start_matches('*').trim().trim_start_matches("origin/").to_string())
+        .filter(|l| !l.is_empty() && l != "HEAD")
         .collect()
 }
 
@@ -87,11 +88,12 @@ fn update_repo() -> Result<Vec<String>, String> {
     }
     let repo_str = repo.to_string_lossy().into_owned();
     if repo.join(".git").exists() {
-        run_git(&["-C", &repo_str, "pull"])?;
+        run_git(&["-C", &repo_str, "fetch", "--prune"])?;
     } else {
         run_git(&["clone", REPO_URL, &repo_str])?;
     }
-    let listing = run_git(&["-C", &repo_str, "branch", "--list"])?;
+    // remote branches, so newly pushed ones show up without a local checkout first
+    let listing = run_git(&["-C", &repo_str, "branch", "-r"])?;
     Ok(parse_branches(&listing))
 }
 
@@ -106,11 +108,25 @@ fn open_log() -> Result<File, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Pull the built binary's path out of a `cargo build --message-format=json` line.
+/// Returns None for library artifacts (`"executable":null`) and non-artifact lines.
+fn parse_executable(line: &str) -> Option<String> {
+    let key = "\"executable\":\"";
+    let start = line.find(key)? + key.len();
+    let rest = &line[start..];
+    let end = rest.find('"')?; // a file path won't contain a literal quote
+    Some(rest[..end].replace("\\\\", "\\")) // unescape JSON backslashes (Windows paths)
+}
+
 /// checkout + cargo build, blocking until the build finishes. Output to run.log.
-fn build(branch: &str, release: bool) -> Result<(), String> {
+/// Returns the path to the produced binary.
+fn build(branch: &str, release: bool) -> Result<String, String> {
     let repo = repo_dir();
     let repo_str = repo.to_string_lossy().into_owned();
-    run_git(&["-C", &repo_str, "checkout", branch])?;
+    // -B creates-or-resets the local branch to match the remote (handles newly pushed branches
+    // and stale local ones). ponytail: repo is consume-only, so discarding local state is fine.
+    let start = format!("origin/{branch}");
+    run_git(&["-C", &repo_str, "checkout", "-B", branch, &start])?;
 
     let log = open_log()?;
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
@@ -126,22 +142,37 @@ fn build(branch: &str, release: bool) -> Result<(), String> {
         .stderr(Stdio::from(log_err))
         .status()
         .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("build failed (exit {status}); see {}", log_path().display()))
+    if !status.success() {
+        return Err(format!("build failed (exit {status}); see {}", log_path().display()));
     }
+    locate_exe(&repo, release)
 }
 
-/// Spawn cargo run detached, output to run.log. Returns on spawn error only.
-fn spawn_run(release: bool) -> Result<(), String> {
-    let log = open_log()?;
-    let log_err = log.try_clone().map_err(|e| e.to_string())?;
+/// Ask cargo for the binary path (cached/instant after the real build above).
+fn locate_exe(repo: &Path, release: bool) -> Result<String, String> {
     let mut cmd = Command::new("cargo");
-    cmd.arg("run");
+    cmd.arg("build").arg("--message-format=json");
     if release {
         cmd.arg("--release");
     }
+    let out = cmd.current_dir(repo).output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .rev()
+        .find_map(parse_executable)
+        .ok_or_else(|| "cargo build produced no executable".to_string())
+}
+
+/// Spawn the built binary detached, output to run.log. Returns on spawn error only.
+/// Runs the exe directly instead of `cargo run`, so no `cargo` console window appears
+/// on Windows (CREATE_NO_WINDOW) — see issue #1.
+fn spawn_run(exe: &str) -> Result<(), String> {
+    let log = open_log()?;
+    let log_err = log.try_clone().map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe);
     cmd.current_dir(repo_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
@@ -150,8 +181,8 @@ fn spawn_run(release: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW | DETACHED_PROCESS
-        cmd.creation_flags(0x0800_0000 | 0x0000_0008);
+        // CREATE_NO_WINDOW: run a console app with its console window hidden.
+        cmd.creation_flags(0x0800_0000);
     }
 
     cmd.spawn().map_err(|e| e.to_string())?;
@@ -162,7 +193,7 @@ fn spawn_run(release: bool) -> Result<(), String> {
 enum State {
     Updating(Receiver<Result<Vec<String>, String>>),
     Ready { branches: Vec<String> },
-    Building(Receiver<Result<(), String>>),
+    Building(Receiver<Result<String, String>>),
     Error(String),
 }
 
@@ -215,7 +246,7 @@ impl eframe::App for App {
             State::Building(rx) => {
                 if let Ok(result) = rx.try_recv() {
                     match result {
-                        Ok(()) => match spawn_run(self.release) {
+                        Ok(exe) => match spawn_run(&exe) {
                             Ok(()) => std::process::exit(0),
                             Err(e) => self.state = State::Error(e),
                         },
@@ -292,7 +323,21 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::pick_default_branch;
+    use super::{parse_executable, pick_default_branch};
+
+    #[test]
+    fn executable_parsing() {
+        // a bin artifact
+        let line = r#"{"reason":"compiler-artifact","target":{"kind":["bin"]},"executable":"/home/u/repo/target/release/app"}"#;
+        assert_eq!(parse_executable(line).as_deref(), Some("/home/u/repo/target/release/app"));
+        // windows path with escaped backslashes
+        let win = r#"{"executable":"C:\\repo\\target\\release\\app.exe"}"#;
+        assert_eq!(parse_executable(win).as_deref(), Some(r"C:\repo\target\release\app.exe"));
+        // library artifact -> no executable
+        assert_eq!(parse_executable(r#"{"executable":null}"#), None);
+        // unrelated line
+        assert_eq!(parse_executable(r#"{"reason":"build-finished"}"#), None);
+    }
 
     #[test]
     fn default_branch_logic() {
