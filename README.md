@@ -4,6 +4,8 @@ A tiny launcher for [ForzaTelemetryV3](https://github.com/Ritze03/ForzaTelemetry
 It keeps a copy of the tool up to date, builds it, and runs it — so you always launch
 the latest version with one click. Works on Windows and Linux.
 
+![The launcher window](docs/screenshot.png)
+
 ## Get started
 
 ### 1. Install the prerequisites
