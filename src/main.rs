@@ -7,9 +7,14 @@ use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Mutex;
 
 const REPO_URL: &str = "https://github.com/Ritze03/ForzaTelemetryV3.git";
 const APP_DIR: &str = "ForzaTelemetryV3Launcher";
+
+/// Serialises fetches: the background branch refresh and Launch's own fetch would
+/// otherwise race on git's ref locks.
+static FETCH_LOCK: Mutex<()> = Mutex::new(());
 
 fn data_dir() -> PathBuf {
     dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(APP_DIR)
@@ -217,6 +222,7 @@ fn build_streaming(
     let repo = repo_dir();
     let repo_str = repo.to_string_lossy().into_owned();
     if update {
+        let _g = FETCH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         run_git(&["-C", &repo_str, "fetch", "--prune"])?;
     }
     // -B creates-or-resets the local branch to match the remote (handles newly pushed branches
@@ -373,6 +379,7 @@ struct App {
     selected_branch: String,
     release: bool,
     saved_branch: Option<String>,
+    refresh: Option<Receiver<Result<Vec<String>, String>>>,
 }
 
 fn spawn_update(ctx: egui::Context) -> Receiver<UpdateMsg> {
@@ -384,6 +391,21 @@ fn spawn_update(ctx: egui::Context) -> Receiver<UpdateMsg> {
             ctx.request_repaint();
         });
         let _ = tx.send(UpdateMsg::Done(res));
+        ctx.request_repaint();
+    });
+    rx
+}
+
+/// After the menu is up: fetch in the background so newly pushed branches appear
+/// without blocking startup.
+fn spawn_refresh(ctx: egui::Context) -> Receiver<Result<Vec<String>, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let res = {
+            let _g = FETCH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            update_repo(true, |_| {})
+        };
+        let _ = tx.send(res);
         ctx.request_repaint();
     });
     rx
@@ -414,6 +436,7 @@ impl App {
             selected_branch: String::new(),
             release,
             saved_branch,
+            refresh: None,
         }
     }
 }
@@ -443,9 +466,23 @@ impl eframe::App for App {
                         self.selected_branch =
                             pick_default_branch(self.saved_branch.as_deref(), &branches);
                         self.state = State::Ready { branches };
+                        self.refresh = Some(spawn_refresh(ctx.clone()));
                     }
                     Err(e) => self.state = State::Error(e),
                 }
+            }
+        }
+
+        // Background fetch finished: swap in the fresh branch list.
+        if let Some(Ok(res)) = self.refresh.as_ref().map(|rx| rx.try_recv()) {
+            self.refresh = None;
+            // ponytail: fetch errors (offline) are ignored; the local list still works.
+            if let (Ok(fresh), State::Ready { branches }) = (res, &mut self.state) {
+                if !fresh.contains(&self.selected_branch) {
+                    self.selected_branch =
+                        pick_default_branch(self.saved_branch.as_deref(), &fresh);
+                }
+                *branches = fresh;
             }
         }
 
@@ -532,6 +569,7 @@ impl eframe::App for App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let del = ui.add(theme::danger_button("Re-init Repository"));
                         if del.clicked() {
+                            self.refresh = None; // stale fetch against the deleted repo
                             match delete_repo() {
                                 Ok(()) => {
                                     self.state = State::Updating {
