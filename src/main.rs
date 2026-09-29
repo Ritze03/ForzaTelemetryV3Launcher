@@ -8,9 +8,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const REPO_URL: &str = "https://github.com/Ritze03/ForzaTelemetryV3.git";
 const APP_DIR: &str = "ForzaTelemetryV3Launcher";
+const LAUNCH_DELAY: Duration = Duration::from_secs(10);
 
 /// Serialises fetches: the background branch refresh and Launch's own fetch would
 /// otherwise race on git's ref locks.
@@ -380,6 +382,8 @@ struct App {
     release: bool,
     saved_branch: Option<String>,
     refresh: Option<Receiver<Result<Vec<String>, String>>>,
+    auto_launch_at: Instant,
+    auto_launch_cancelled: bool,
 }
 
 fn spawn_update(ctx: egui::Context) -> Receiver<UpdateMsg> {
@@ -437,6 +441,8 @@ impl App {
             release,
             saved_branch,
             refresh: None,
+            auto_launch_at: Instant::now() + LAUNCH_DELAY,
+            auto_launch_cancelled: false,
         }
     }
 }
@@ -514,6 +520,15 @@ impl eframe::App for App {
             }
         }
 
+        if !self.auto_launch_cancelled && matches!(self.state, State::Ready { .. }) {
+            let launch_wait = self.auto_launch_at.saturating_duration_since(Instant::now());
+            if launch_wait.is_zero() {
+                self.start_build(true);
+            } else {
+                ctx.request_repaint_after(launch_wait.min(Duration::from_millis(100)));
+            }
+        }
+
         let head = egui::Frame::side_top_panel(&ctx.style()).fill(theme::HEAD);
         egui::TopBottomPanel::top("title_bar").frame(head).show(ctx, |ui| {
             ui.add_space(2.0);
@@ -542,6 +557,8 @@ impl eframe::App for App {
             }
             State::Ready { branches } => {
                 let branches = branches.clone();
+                let branch_before = self.selected_branch.clone();
+                let release_before = self.release;
                 ui.spacing_mut().item_spacing.y = 0.0; // card() owns the 8px inter-card gap
                 // No extra top space: the panel's own inner margin already spaces the card
                 // from the top, matching the (equal) left/right margins.
@@ -562,6 +579,21 @@ impl eframe::App for App {
                     radio_desc(ui, &mut self.release, false, "Debug", "Launches quicker");
                     radio_desc(ui, &mut self.release, true, "Release", "Performs better");
                 });
+
+                if self.selected_branch != branch_before || self.release != release_before {
+                    self.auto_launch_cancelled = true;
+                }
+                let launch_status = if self.auto_launch_cancelled {
+                    "Automatic launch cancelled".to_string()
+                } else {
+                    let seconds = self
+                        .auto_launch_at
+                        .saturating_duration_since(Instant::now())
+                        .as_secs()
+                        .saturating_add(1);
+                    format!("Automatic launch in {seconds} seconds")
+                };
+                ui.label(egui::RichText::new(launch_status).color(theme::DIM).size(11.0));
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
@@ -611,7 +643,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([320.0, 244.0])
+            .with_inner_size([320.0, 255.0])
             .with_resizable(false),
         ..Default::default()
     };
