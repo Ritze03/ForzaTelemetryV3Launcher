@@ -12,8 +12,10 @@
   <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#tile)"/>
   <rect x="34" y="34" width="444" height="444" rx="102" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="4"/>
   <g transform="translate(0 16)">
-  <path d="M 171.1 336.9 A 120 120 0 1 1 316.0 148.1" fill="none" stroke="#F3F4F6" stroke-width="32" stroke-linecap="round"/>
-  <path d="M 316.0 148.1 A 120 120 0 0 1 340.9 336.9" fill="none" stroke="#FF5A1F" stroke-width="32" stroke-linecap="round"/>
-  <path d="M 228 196 L 228 296 L 310 246 Z" fill="#F3F4F6" stroke="#F3F4F6" stroke-width="24" stroke-linejoin="round"/>
+  <path d="M 171.15 342.85 A 120 120 0 1 1 364.76 207.29" fill="none" stroke="#F3F4F6" stroke-width="32"/>
+  <circle cx="171.15" cy="342.85" r="16" fill="#F3F4F6"/>
+  <path d="M 364.76 207.29 A 120 120 0 0 1 340.85 342.85" fill="none" stroke="#FF5A1F" stroke-width="32"/>
+  <circle cx="340.85" cy="342.85" r="16" fill="#FF5A1F"/>
+  <path d="M 228 208 L 228 308 L 310 258 Z" fill="#F3F4F6" stroke="#F3F4F6" stroke-width="24" stroke-linejoin="round"/>
   </g>
 </svg>
