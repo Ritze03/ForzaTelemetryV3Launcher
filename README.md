@@ -34,7 +34,10 @@ Grab the binary for your OS from the
 [releases page](https://github.com/Ritze03/ForzaTelemetryV3Launcher/releases):
 
 - **Windows** — download `ForzaTelemetryV3Launcher-windows.exe` and double-click it.
-- **Linux** — download `ForzaTelemetryV3Launcher-linux`, then `chmod +x` it and run it.
+- **Linux** — run `ritz-get install ForzaTelemetryV3Launcher` (or, without ritz-get, clone this
+  repo and run `./install.sh --install`; `./install.sh --remove` uninstalls it again), then start
+  `ForzaTelemetryV3Launcher`. Alternatively download `ForzaTelemetryV3Launcher-linux`, then
+  `chmod +x` it and run it.
 
 ## Using it
 
