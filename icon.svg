@@ -11,6 +11,7 @@
   </defs>
   <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#tile)"/>
   <rect x="34" y="34" width="444" height="444" rx="102" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="4"/>
+  <circle cx="256" cy="256" r="190" fill="url(#glow)"/>
   <g transform="translate(0 16)">
   <path d="M 171.15 342.85 A 120 120 0 1 1 364.76 207.29" fill="none" stroke="#F3F4F6" stroke-width="32"/>
   <circle cx="171.15" cy="342.85" r="16" fill="#F3F4F6"/>
