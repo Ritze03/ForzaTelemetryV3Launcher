@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Forza Telemetry V3
+Comment=Keeps ForzaTelemetryV3 up to date, builds and runs it
+Exec=ForzaTelemetryV3Launcher
+Categories=Game;
